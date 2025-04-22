@@ -1,5 +1,5 @@
-import {Address, Log, TransactionReceipt, Client} from "viem";
-import {LP_TOKENS, SWAP_TOPIC} from "./consts";
+import {Address, Log, TransactionReceipt} from "viem";
+import {LP_TOKENS, SWAP_TOPIC_UNISWAP_V2, SWAP_TOPIC_UNISWAP_V3} from "./consts";
 import schema from "ponder:schema";
 import {UniswapV3PoolAbi} from "../../abis/UniswapV3PoolAbi";
 import {UniswapV2PairAbi} from "../../abis/UniswapV2PairAbi";
@@ -13,7 +13,7 @@ export async function getPoolTokens(
     isV3: boolean = true
 ): Promise<PoolTokens | null> {
     try {
-        const { client } = context;
+        const {client} = context;
         const abi = isV3 ? UniswapV3PoolAbi : UniswapV2PairAbi;
         const poolContract = {
             address: poolAddress,
@@ -22,8 +22,8 @@ export async function getPoolTokens(
 
         const tokenInfo = await client.multicall({
             contracts: [
-                { ...poolContract, functionName: "token0" },
-                { ...poolContract, functionName: "token1" }
+                {...poolContract, functionName: "token0"},
+                {...poolContract, functionName: "token1"}
             ]
         });
 
@@ -77,7 +77,8 @@ export async function getPoolTokens(
 export async function checkIfTeamBundle(
     context: Context,
     poolAddress: Address,
-    txHash: Address
+    txHash: Address,
+    isV3: boolean
 ): Promise<boolean> {
     try {
         const receipt: TransactionReceipt = await context.client.getTransactionReceipt({
@@ -86,7 +87,7 @@ export async function checkIfTeamBundle(
 
         return receipt.logs.some((log: Log) =>
             log.address.toLowerCase() === poolAddress.toLowerCase() &&
-            log.topics[0] === SWAP_TOPIC
+            log.topics[0] === (isV3 ? SWAP_TOPIC_UNISWAP_V3 : SWAP_TOPIC_UNISWAP_V2)
         );
     } catch (e) {
         console.error(`Error checking for team bundle in tx ${txHash}:`, e);

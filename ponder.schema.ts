@@ -52,6 +52,7 @@ export const snipers = onchainTable("snipers", (t) => ({
     address: t.hex().notNull(),
     volumeBought: t.bigint("volume_bought").notNull(),
     percentSupply: t.doublePrecision("percent_supply").notNull(),
+    txnHash: t.hex("txn_hash").notNull(),
 }));
 
 export const snipersPoolsRelations = relations(snipers, ({one}) => ({

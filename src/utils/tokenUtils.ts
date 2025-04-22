@@ -6,7 +6,7 @@ import {eq} from "ponder";
 import {ContractCreationInfo, TokenInfo} from "./types";
 import axios from "axios";
 
-export async function getTokenInfo(context: Context, tokenAddress: Address): Promise<TokenInfo> {
+export async function getTargetTokenInfo(context: Context, tokenAddress: Address): Promise<TokenInfo> {
     try {
         const targetTokenContract = {
             address: tokenAddress,
@@ -28,7 +28,7 @@ export async function getTokenInfo(context: Context, tokenAddress: Address): Pro
             ticker: results[1].result ? String(results[1].result) : "UNK",
             decimals: results[2].result ? parseInt(results[2].result.toString()) : 18,
             totalSupply: results[3].result ? BigInt(results[3].result.toString()) : null
-        };
+        } as TokenInfo;
     } catch (e) {
         console.error(`Error reading token data for ${tokenAddress}:`, e);
         return {
@@ -54,7 +54,6 @@ export async function getContractCreationInfo(tokenAddress:Address): Promise<Con
 
         const response = await axios.get(url);
 
-        // Check if the API call was successful
         if (response.data.status !== "1" || !response.data.result.length) {
             console.log(`No creation data found for: ${tokenAddress}`);
             return null;

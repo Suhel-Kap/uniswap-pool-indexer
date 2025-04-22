@@ -50,6 +50,7 @@ export interface SniperInfo {
     address: Address;
     volumeBought: bigint;
     percentSupply: number;
+    txnHash: Address;
 }
 
 export interface UniswapV3SwapArgs {

@@ -4,13 +4,14 @@ import {Address} from "viem";
 import {uniswapV3Mutex, uniswapV2Mutex} from "./utils/consts";
 import {eq} from "ponder";
 import {checkIfTeamBundle, getOrCreatePool, getPoolTokens} from "./utils/poolUtils";
-import {getContractCreationInfo, getOrCreateToken, getTokenInfo} from "./utils/tokenUtils";
+import {getContractCreationInfo, getOrCreateToken, getTargetTokenInfo} from "./utils/tokenUtils";
 import {saveSnipers, trackSnipers} from "./utils/sniperUtils";
 import {calculateMarketCap, saveMarketCap} from "./utils/marketCapUtils";
 import {processPoolFunding} from "./utils/fundingUtils";
 import {storeLpTokens} from "./utils/storeNewContracts";
 import {ContractCreationInfo, PoolTokens, SniperInfo, TokenInfo} from "./utils/types";
 
+// This function can be invoked on either UniswapV2Pair:setup or UniswapV3Pair:setup events as it only inserts the LP token in the DB
 ponder.on("UniswapV2Pair:setup", async ({context}) => {
     await storeLpTokens(context);
 })
@@ -40,13 +41,13 @@ ponder.on("UniswapV2Pair:Mint", async ({event, context}) => {
                 return;
             }
 
-            const tokenInfo: TokenInfo = await getTokenInfo(context, poolTokens.targetToken);
+            const tokenInfo: TokenInfo = await getTargetTokenInfo(context, poolTokens.targetToken);
 
             const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
 
             const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
 
-            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash);
+            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash, false);
 
             const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
 
@@ -78,7 +79,6 @@ ponder.on("UniswapV2Pair:Mint", async ({event, context}) => {
                     isV3: false
                 }
             );
-
             await saveSnipers(context, poolId, snipers);
 
             if (tokenInfo.totalSupply) {
@@ -138,13 +138,13 @@ ponder.on("UniswapV3Pool:Mint", async ({event, context}) => {
                 return;
             }
 
-            const tokenInfo: TokenInfo = await getTokenInfo(context, poolTokens.targetToken);
+            const tokenInfo: TokenInfo = await getTargetTokenInfo(context, poolTokens.targetToken);
 
             const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
 
             const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
 
-            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash);
+            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash, true);
 
             const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
 
