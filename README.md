@@ -18,7 +18,6 @@ This project uses [Ponder](https://ponder.sh/) to index Ethereum blockchain data
 ## Technical Stack
 
 - TypeScript
-- Node.js
 - Ponder (Ethereum indexer)
 - PostgreSQL (database)
 - Viem (Ethereum interaction library)
