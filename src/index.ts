@@ -10,195 +10,202 @@ import {calculateMarketCap, saveMarketCap} from "./utils/marketCapUtils";
 import {processPoolFunding} from "./utils/fundingUtils";
 import {storeLpTokens} from "./utils/storeNewContracts";
 import {ContractCreationInfo, PoolTokens, SniperInfo, TokenInfo} from "./utils/types";
-import {tokens} from "../ponder.schema";
 
 ponder.on("UniswapV2Pair:setup", async ({context}) => {
     await storeLpTokens(context);
 })
 
-ponder.on("UniswapV2Pair:Mint", async ({ event, context }) => {
+ponder.on("UniswapV2Pair:Mint", async ({event, context}) => {
     await uniswapV2Mutex.runExclusive(async () => {
-        const poolAddress: Address = event.log.address;
+        try {
+            const poolAddress: Address = event.log.address;
 
-        console.log("UniswapV2Pair:Mint event found for pool:", poolAddress);
+            console.log("UniswapV2Pair:Mint event found for pool:", poolAddress);
 
-        const existingPool = await context.db.sql.query.pools.findFirst({
-            where: eq(schema.pools.poolAddress, poolAddress)
-        });
+            const existingPool = await context.db.sql.query.pools.findFirst({
+                where: eq(schema.pools.poolAddress, poolAddress)
+            });
 
-        if (existingPool) {
-            if (existingPool.creationBlock <= event.block.number &&
-                existingPool.creationTxnIndex <= event.transaction.transactionIndex) {
+            if (existingPool) {
+                if (existingPool.creationBlock <= event.block.number &&
+                    existingPool.creationTxnIndex <= event.transaction.transactionIndex) {
+                    return;
+                }
+            }
+
+            const poolTokens: PoolTokens | null = await getPoolTokens(context, poolAddress, false);
+
+            if (!poolTokens) {
+                console.log("No relevant LP token found in pool, skipping...");
                 return;
             }
-        }
 
-        const poolTokens: PoolTokens | null = await getPoolTokens(context, poolAddress, false);
+            const tokenInfo: TokenInfo = await getTokenInfo(context, poolTokens.targetToken);
 
-        if (!poolTokens) {
-            console.log("No relevant LP token found in pool, skipping...");
-            return;
-        }
+            const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
 
-        const tokenInfo: TokenInfo= await getTokenInfo(context, poolTokens.targetToken);
+            const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
 
-        const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
+            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash);
 
-        const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
+            const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
 
-        const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash);
+            const poolId: string = await getOrCreatePool(
+                context,
+                poolAddress,
+                tokenId,
+                poolTokens,
+                {
+                    blockNumber: event.block.number,
+                    timestamp: event.block.timestamp,
+                    txHash: event.transaction.hash,
+                    txIndex: event.transaction.transactionIndex,
+                    lpAmount: lpAmount,
+                    teamBundle: isTeamBundle,
+                    isV3: false,
+                    deployerAddress: event.transaction.from
+                }
+            );
 
-        const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
+            const snipers: Array<SniperInfo> = await trackSnipers(
+                context,
+                poolAddress,
+                poolTokens,
+                {
+                    blockNumber: event.block.number,
+                    txIndex: event.transaction.transactionIndex,
+                    totalSupply: tokenInfo.totalSupply,
+                    isV3: false
+                }
+            );
 
-        const poolId: string = await getOrCreatePool(
-            context,
-            poolAddress,
-            tokenId,
-            poolTokens,
-            {
-                blockNumber: event.block.number,
-                timestamp: event.block.timestamp,
-                txHash: event.transaction.hash,
-                txIndex: event.transaction.transactionIndex,
-                lpAmount: lpAmount,
-                teamBundle: isTeamBundle,
-                isV3: false,
-                deployerAddress: event.transaction.from
+            await saveSnipers(context, poolId, snipers);
+
+            if (tokenInfo.totalSupply) {
+                const marketCap: bigint = calculateMarketCap({
+                    tokenTotalSupply: tokenInfo.totalSupply,
+                    tokenAmount: poolTokens.tokenIsToken0 ? event.args.amount0 : event.args.amount1,
+                    tokenDecimals: tokenInfo.decimals,
+                    lpTokenAmount: lpAmount,
+                    lpTokenDecimals: poolTokens.lpTokenDecimals,
+                });
+
+                await saveMarketCap(context, poolId, {
+                    lpTokenAddress: poolTokens.lpToken,
+                    lpTokenSymbol: poolTokens.lpSymbol,
+                    marketCap: marketCap
+                });
             }
-        );
 
-        const snipers: Array<SniperInfo> = await trackSnipers(
-            context,
-            poolAddress,
-            poolTokens,
-            {
-                blockNumber: event.block.number,
-                txIndex: event.transaction.transactionIndex,
-                totalSupply: tokenInfo.totalSupply,
-                isV3: false
-            }
-        );
+            // Process funding history for the pool
+            await processPoolFunding(
+                context,
+                poolTokens.targetToken,
+                poolAddress,
+                poolId
+            );
 
-        await saveSnipers(context, poolId, snipers);
-
-        if (tokenInfo.totalSupply) {
-            const marketCap: bigint = calculateMarketCap({
-                tokenTotalSupply: tokenInfo.totalSupply,
-                tokenAmount: poolTokens.tokenIsToken0 ? event.args.amount0 : event.args.amount1,
-                tokenDecimals: tokenInfo.decimals,
-                lpTokenAmount: lpAmount,
-                lpTokenDecimals: poolTokens.lpTokenDecimals,
-            });
-
-            await saveMarketCap(context, poolId, {
-                lpTokenAddress: poolTokens.lpToken,
-                lpTokenSymbol: poolTokens.lpSymbol,
-                marketCap: marketCap
-            });
+            console.log(`Successfully processed V2 pool ${poolAddress} with token ${poolTokens.targetToken}`);
+            console.log(`Team bundle: ${isTeamBundle}, Snipers: ${snipers.length}`);
+        } catch (error) {
+            console.error("Error processing UniswapV2Pair:Mint event:", error);
         }
-
-        // Process funding history for the pool
-        await processPoolFunding(
-            context,
-            poolTokens.targetToken,
-            poolAddress,
-            poolId
-        );
-
-        console.log(`Successfully processed V2 pool ${poolAddress} with token ${poolTokens.targetToken}`);
-        console.log(`Team bundle: ${isTeamBundle}, Snipers: ${snipers.length}`);
     });
 });
 
 ponder.on("UniswapV3Pool:Mint", async ({event, context}) => {
     await uniswapV3Mutex.runExclusive(async () => {
-        const poolAddress: Address = event.log.address;
+        try {
+            const poolAddress: Address = event.log.address;
 
-        console.log("UniswapV3Pool:Mint event found for pool:", poolAddress);
+            console.log("UniswapV3Pool:Mint event found for pool:", poolAddress);
 
-        const existingPool = await context.db.sql.query.pools.findFirst({
-            where: eq(schema.pools.poolAddress, poolAddress)
-        });
+            const existingPool = await context.db.sql.query.pools.findFirst({
+                where: eq(schema.pools.poolAddress, poolAddress)
+            });
 
-        if (existingPool) {
-            if (existingPool.creationBlock <= event.block.number &&
-                existingPool.creationTxnIndex <= event.transaction.transactionIndex) {
+            if (existingPool) {
+                if (existingPool.creationBlock <= event.block.number &&
+                    existingPool.creationTxnIndex <= event.transaction.transactionIndex) {
+                    return;
+                }
+            }
+
+            const poolTokens: PoolTokens | null = await getPoolTokens(context, poolAddress);
+
+            if (!poolTokens) {
+                console.log("No relevant LP token found in pool, skipping...");
                 return;
             }
-        }
 
-        const poolTokens: PoolTokens | null = await getPoolTokens(context, poolAddress);
+            const tokenInfo: TokenInfo = await getTokenInfo(context, poolTokens.targetToken);
 
-        if (!poolTokens) {
-            console.log("No relevant LP token found in pool, skipping...");
-            return;
-        }
+            const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
 
-        const tokenInfo: TokenInfo = await getTokenInfo(context, poolTokens.targetToken);
+            const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
 
-        const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
+            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash);
 
-        const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
+            const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
 
-        const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash);
+            const poolId: string = await getOrCreatePool(
+                context,
+                poolAddress,
+                tokenId,
+                poolTokens,
+                {
+                    blockNumber: event.block.number,
+                    timestamp: event.block.timestamp,
+                    txHash: event.transaction.hash,
+                    txIndex: event.transaction.transactionIndex,
+                    lpAmount: lpAmount,
+                    teamBundle: isTeamBundle,
+                    isV3: true,
+                    deployerAddress: event.transaction.from
+                }
+            );
 
-        const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
+            const snipers: Array<SniperInfo> = await trackSnipers(
+                context,
+                poolAddress,
+                poolTokens,
+                {
+                    blockNumber: event.block.number,
+                    txIndex: event.transaction.transactionIndex,
+                    totalSupply: tokenInfo.totalSupply,
+                    isV3: true,
+                }
+            );
 
-        const poolId: string = await getOrCreatePool(
-            context,
-            poolAddress,
-            tokenId,
-            poolTokens,
-            {
-                blockNumber: event.block.number,
-                timestamp: event.block.timestamp,
-                txHash: event.transaction.hash,
-                txIndex: event.transaction.transactionIndex,
-                lpAmount: lpAmount,
-                teamBundle: isTeamBundle,
-                isV3: true,
-                deployerAddress: event.transaction.from
+            await saveSnipers(context, poolId, snipers);
+
+            if (tokenInfo.totalSupply) {
+                const marketCap: bigint = calculateMarketCap({
+                    tokenTotalSupply: tokenInfo.totalSupply,
+                    tokenAmount: poolTokens.tokenIsToken0 ? event.args.amount0 : event.args.amount1,
+                    tokenDecimals: tokenInfo.decimals,
+                    lpTokenAmount: lpAmount,
+                    lpTokenDecimals: poolTokens.lpTokenDecimals,
+                })
+
+                await saveMarketCap(context, poolId, {
+                    lpTokenAddress: poolTokens.lpToken,
+                    lpTokenSymbol: poolTokens.lpSymbol,
+                    marketCap: marketCap
+                });
             }
-        );
 
-        const snipers: Array<SniperInfo> = await trackSnipers(
-            context,
-            poolAddress,
-            poolTokens,
-            {
-                blockNumber: event.block.number,
-                txIndex: event.transaction.transactionIndex,
-                totalSupply: tokenInfo.totalSupply,
-                isV3: true,
-            }
-        );
+            await processPoolFunding(
+                context,
+                poolTokens.targetToken,
+                poolAddress,
+                poolId
+            );
 
-        await saveSnipers(context, poolId, snipers);
-
-        if (tokenInfo.totalSupply) {
-            const marketCap: bigint = calculateMarketCap({
-                tokenTotalSupply: tokenInfo.totalSupply,
-                tokenAmount: poolTokens.tokenIsToken0 ? event.args.amount0 : event.args.amount1,
-                tokenDecimals: tokenInfo.decimals,
-                lpTokenAmount: lpAmount,
-                lpTokenDecimals: poolTokens.lpTokenDecimals,
-            })
-
-            await saveMarketCap(context, poolId, {
-                lpTokenAddress: poolTokens.lpToken,
-                lpTokenSymbol: poolTokens.lpSymbol,
-                marketCap: marketCap
-            });
+            console.log(`Successfully processed pool ${poolAddress} with token ${poolTokens.targetToken}`);
+            console.log(`Team bundle: ${isTeamBundle}, Snipers: ${snipers.length}`);
+        } catch (error) {
+            console.error("Error processing UniswapV3Pool:Mint event:", error);
         }
-
-        await processPoolFunding(
-            context,
-            poolTokens.targetToken,
-            poolAddress,
-            poolId
-        );
-
-        console.log(`Successfully processed pool ${poolAddress} with token ${poolTokens.targetToken}`);
-        console.log(`Team bundle: ${isTeamBundle}, Snipers: ${snipers.length}`);
     });
 });

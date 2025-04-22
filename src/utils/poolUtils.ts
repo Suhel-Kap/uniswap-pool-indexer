@@ -14,10 +14,7 @@ export async function getPoolTokens(
 ): Promise<PoolTokens | null> {
     try {
         const { client } = context;
-
-        // Use appropriate ABI based on pool type
         const abi = isV3 ? UniswapV3PoolAbi : UniswapV2PairAbi;
-
         const poolContract = {
             address: poolAddress,
             abi: abi,
@@ -38,7 +35,7 @@ export async function getPoolTokens(
         const token0Address = tokenInfo[0].result as Address;
         const token1Address = tokenInfo[1].result as Address;
 
-        const lpTokenAddresses = Object.values(LP_TOKENS).map(token => token.address.toLowerCase());
+        const lpTokenAddresses: Array<string> = Object.values(LP_TOKENS).map(token => token.address.toLowerCase());
 
         if (lpTokenAddresses.includes(token0Address.toLowerCase())) {
             const lpInfo = Object.entries(LP_TOKENS).find(
