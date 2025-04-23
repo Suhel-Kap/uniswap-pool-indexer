@@ -105,7 +105,7 @@ The schema includes tables for:
 - Tokens
 - Snipers
 - Funding trails
-- Contract creation information
+- Market cap
 
 ## Initial Liquidity Tracking
 
