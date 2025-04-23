@@ -3,7 +3,7 @@ import schema from "ponder:schema";
 import {Address} from "viem";
 import {uniswapV3Mutex, uniswapV2Mutex} from "./utils/consts";
 import {eq} from "ponder";
-import {checkIfTeamBundle, getOrCreatePool, getPoolTokens} from "./utils/poolUtils";
+import {checkIfTeamBundle, getOrCreatePool, getPoolTokens, updatePoolWithAdditionalLiquidity} from "./utils/poolUtils";
 import {getContractCreationInfo, getOrCreateToken, getTargetTokenInfo} from "./utils/tokenUtils";
 import {saveSnipers, trackSnipers} from "./utils/sniperUtils";
 import {calculateMarketCap, saveMarketCap} from "./utils/marketCapUtils";
@@ -20,22 +20,13 @@ ponder.on("UniswapV2Pair:Mint", async ({event, context}) => {
     await uniswapV2Mutex.runExclusive(async () => {
         try {
             const poolAddress: Address = event.log.address;
-
             console.log("UniswapV2Pair:Mint event found for pool:", poolAddress);
 
             const existingPool = await context.db.sql.query.pools.findFirst({
                 where: eq(schema.pools.poolAddress, poolAddress)
             });
 
-            if (existingPool) {
-                if (existingPool.creationBlock <= event.block.number &&
-                    existingPool.creationTxnIndex <= event.transaction.transactionIndex) {
-                    return;
-                }
-            }
-
             const poolTokens: PoolTokens | null = await getPoolTokens(context, poolAddress, false);
-
             if (!poolTokens) {
                 console.log("No relevant LP token found in pool, skipping...");
                 return;
@@ -43,13 +34,23 @@ ponder.on("UniswapV2Pair:Mint", async ({event, context}) => {
 
             const tokenInfo: TokenInfo = await getTargetTokenInfo(context, poolTokens.targetToken);
 
-            const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
-
-            const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
-
-            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash, false);
-
             const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
+            const tokenAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount0 : event.args.amount1;
+
+            if (existingPool) {
+                if (existingPool.creationBlock < event.block.number) {
+                    return;
+                }
+
+                if (existingPool.creationBlock === event.block.number) {
+                    await updatePoolWithAdditionalLiquidity(context, existingPool, poolAddress, poolTokens, tokenInfo, lpAmount, tokenAmount);
+                    return
+                }
+            }
+
+            const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
+            const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
+            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash, false);
 
             const poolId: string = await getOrCreatePool(
                 context,
@@ -117,22 +118,13 @@ ponder.on("UniswapV3Pool:Mint", async ({event, context}) => {
     await uniswapV3Mutex.runExclusive(async () => {
         try {
             const poolAddress: Address = event.log.address;
-
             console.log("UniswapV3Pool:Mint event found for pool:", poolAddress);
 
             const existingPool = await context.db.sql.query.pools.findFirst({
                 where: eq(schema.pools.poolAddress, poolAddress)
             });
 
-            if (existingPool) {
-                if (existingPool.creationBlock <= event.block.number &&
-                    existingPool.creationTxnIndex <= event.transaction.transactionIndex) {
-                    return;
-                }
-            }
-
             const poolTokens: PoolTokens | null = await getPoolTokens(context, poolAddress);
-
             if (!poolTokens) {
                 console.log("No relevant LP token found in pool, skipping...");
                 return;
@@ -140,13 +132,23 @@ ponder.on("UniswapV3Pool:Mint", async ({event, context}) => {
 
             const tokenInfo: TokenInfo = await getTargetTokenInfo(context, poolTokens.targetToken);
 
-            const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
-
-            const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
-
-            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash, true);
-
             const lpAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount1 : event.args.amount0;
+            const tokenAmount: bigint = poolTokens.tokenIsToken0 ? event.args.amount0 : event.args.amount1;
+
+            if (existingPool) {
+                if (existingPool.creationBlock < event.block.number) {
+                    return;
+                }
+
+                if (existingPool.creationBlock === event.block.number) {
+                    await updatePoolWithAdditionalLiquidity(context, existingPool, poolAddress, poolTokens, tokenInfo, lpAmount, tokenAmount);
+                    return
+                }
+            }
+
+            const tokenCreationInfo: ContractCreationInfo | null = await getContractCreationInfo(poolTokens.targetToken);
+            const tokenId: string = await getOrCreateToken(context, tokenInfo, tokenCreationInfo);
+            const isTeamBundle: boolean = await checkIfTeamBundle(context, poolAddress, event.transaction.hash, true);
 
             const poolId: string = await getOrCreatePool(
                 context,

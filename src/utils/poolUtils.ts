@@ -5,7 +5,8 @@ import {UniswapV3PoolAbi} from "../../abis/UniswapV3PoolAbi";
 import {UniswapV2PairAbi} from "../../abis/UniswapV2PairAbi";
 import {Context} from "ponder:registry";
 import {eq} from "ponder";
-import {GetOrCreatePoolInput, PoolTokens} from "./types";
+import {GetOrCreatePoolInput, PoolTokens, TokenInfo} from "./types";
+import {calculateMarketCap} from "./marketCapUtils";
 
 export async function getPoolTokens(
     context: Context,
@@ -131,4 +132,46 @@ export async function getOrCreatePool(
     }).from(schema.pools).where(eq(schema.pools.poolAddress, poolAddress));
 
     return poolResult[0]?.id!;
+}
+
+export async function updatePoolWithAdditionalLiquidity(
+    context: Context,
+    existingPool: any,
+    poolAddress: Address,
+    poolTokens: PoolTokens,
+    tokenInfo: TokenInfo,
+    additionalLpAmount: bigint,
+    tokenAmount: bigint
+): Promise<void> {
+    const { db } = context;
+
+    const newLpAmount = existingPool.lpAmount + additionalLpAmount;
+
+    await db.sql.update(schema.pools).set({
+        initialLiquidity: newLpAmount
+    }).where(eq(schema.pools.id, existingPool.id));
+
+    console.log(`Updated pool ${poolAddress} with additional LP: ${additionalLpAmount.toString()}`);
+
+    if (tokenInfo.totalSupply) {
+        const newMarketCap: bigint = calculateMarketCap({
+            tokenTotalSupply: tokenInfo.totalSupply,
+            tokenAmount: tokenAmount,
+            tokenDecimals: tokenInfo.decimals,
+            lpTokenAmount: newLpAmount,
+            lpTokenDecimals: poolTokens.lpTokenDecimals,
+        });
+
+        const marketCapEntry = await db.sql.query.marketCaps.findFirst({
+            where: eq(schema.marketCaps.poolId, existingPool.id)
+        });
+
+        if (marketCapEntry) {
+            await db.sql.update(schema.marketCaps).set({
+                marketCap: newMarketCap
+            }).where(eq(schema.marketCaps.id, marketCapEntry.id));
+
+            console.log(`Updated market cap for pool ${poolAddress}: ${newMarketCap.toString()}`);
+        }
+    }
 }
