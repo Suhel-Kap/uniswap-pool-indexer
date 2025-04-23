@@ -6,9 +6,8 @@ export const uniswapV2Mutex = new Mutex();
 export const uniswapV3Mutex = new Mutex();
 
 
-// export const START_BLOCK = 22256934; // Apr-13-2025 02:02:59 AM +UTC
 export const START_BLOCK = 21128976n;
-export const END_BLOCK: string | bigint = 21129976n; // "latest" or 21129976n
+export const END_BLOCK: string | bigint = 21129976n; // "latest" or <BLOCK_NUMBER>
 
 export const SWAP_TOPIC_UNISWAP_V2: Address = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822";
 export const SWAP_TOPIC_UNISWAP_V3: Address = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
