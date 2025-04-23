@@ -125,13 +125,11 @@ The system traces the funding history of addresses by:
 3. Moving up the chain to analyze the funding source
 4. Continuing this process up to 3 levels deep
 
-This creates a "money trail" that can help identify connections between different pools and tokens.
-
 ## Limitations
 
 - Requires an Etherscan API key for funding analysis
 - Rate limited by Etherscan API (uses throttling)
-- Only analyzes pools paired with known LP tokens (WETH, USDC, etc.)
+- Only analyzes pools paired with known LP tokens (WETH, USDC, USDT)
 
 ## Future Improvements
 
