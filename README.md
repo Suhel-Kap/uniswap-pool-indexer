@@ -9,11 +9,12 @@ This project uses [Ponder](https://ponder.sh/) to index Ethereum blockchain data
 ## Features
 
 - **Pool Detection**: Monitors UniswapV2Pair:Mint and UniswapV3Pool:Mint events to detect new liquidity pools
+- **Initial Liquidity Aggregation**: Captures all liquidity additions within the same block to accurately track launch metrics
 - **Token Analysis**: Collects and stores token information including name, symbol, decimals, and total supply
 - **Sniper Detection**: Identifies and tracks address behavior that match bot/sniper patterns in the same block as pool creation
 - **Team Bundle Analysis**: Detects if pools were created with team bundle patterns (create pool and swap in same transaction)
 - **Funding Trail Analysis**: Traces the origin of funds for both pool creators and token deployers up to 3 levels deep
-- **Market Cap Calculation**: Calculates initial market cap for newly created pools
+- **Market Cap Calculation**: Calculates initial market cap for newly created pools based on combined initial liquidity
 
 ## Technical Stack
 
@@ -90,7 +91,7 @@ The project consists of several key components:
 
 ### Utility Modules
 
-- `poolUtils.ts` - Functions for pool detection and information retrieval
+- `poolUtils.ts` - Functions for pool detection, information retrieval and liquidity aggregation
 - `tokenUtils.ts` - Token information gathering and storage
 - `sniperUtils.ts` - Bot/sniper detection logic
 - `fundingUtils.ts` - Traces funding sources for addresses
@@ -105,6 +106,15 @@ The schema includes tables for:
 - Snipers
 - Funding trails
 - Contract creation information
+
+## Initial Liquidity Tracking
+
+The system tracks the total initial liquidity at token launch by:
+
+1. Recording the earliest block where liquidity was added as the creation block
+2. Aggregating all liquidity additions within the same block, even across different transactions
+3. Dynamically updating market cap calculations based on combined initial liquidity
+4. Providing an accurate view of launch metrics based on true initial token supply/liquidity ratio
 
 ## Funding Trail Analysis
 
