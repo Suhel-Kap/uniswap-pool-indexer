@@ -98,10 +98,9 @@ ponder.on("UniswapV2Pair:Mint", async ({event, context}) => {
                 });
             }
 
-            // Process funding history for the pool
             await processPoolFunding(
                 context,
-                poolTokens.targetToken,
+                event.transaction.from,
                 poolAddress,
                 poolId
             );
@@ -199,7 +198,7 @@ ponder.on("UniswapV3Pool:Mint", async ({event, context}) => {
 
             await processPoolFunding(
                 context,
-                poolTokens.targetToken,
+                event.transaction.from,
                 poolAddress,
                 poolId
             );

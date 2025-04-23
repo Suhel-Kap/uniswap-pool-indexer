@@ -1,5 +1,5 @@
-import { Address } from "viem";
-import { Context } from "ponder:registry";
+import {Address} from "viem";
+import {Context} from "ponder:registry";
 import schema from "ponder:schema";
 import axios from "axios";
 import {EtherscanTx, FundingInfo} from "./types";
@@ -70,7 +70,7 @@ export async function saveFundingInfo(
     poolId: string,
     fundingInfo: FundingInfo[],
 ): Promise<void> {
-    const { db } = context;
+    const {db} = context;
 
     for (const funding of fundingInfo) {
         await db.insert(schema.fundings).values({
@@ -101,38 +101,18 @@ export async function getPoolCreator(
 
 export async function processPoolFunding(
     context: Context,
-    tokenAddress: Address,
+    poolLiquidityProviderAddress: Address,
     poolAddress: Address,
     poolId: string
 ): Promise<void> {
-    const tokenDeploymentInfo = await context.db.sql.query.newContractsDeployed.findFirst({
-        where: (fields, { eq }) => eq(fields.contractAddress, tokenAddress)
-    });
+    const tokenFundingChain = await trackFundingHistory(
+        poolLiquidityProviderAddress,
+        3
+    );
 
-    if (tokenDeploymentInfo?.deployerAddress) {
-        const tokenFundingChain = await trackFundingHistory(
-            tokenDeploymentInfo.deployerAddress,
-            3
-        );
-
-        if (tokenFundingChain.length > 0) {
-            await saveFundingInfo(context, poolId, tokenFundingChain);
-            console.log(`Saved ${tokenFundingChain.length} token funding levels for ${tokenAddress}`);
-        }
-    }
-
-    const poolCreator: Address | null = await getPoolCreator(context, poolId);
-
-    if (poolCreator) {
-        const poolFundingChain: Array<FundingInfo> = await trackFundingHistory(
-            poolCreator,
-            3
-        );
-
-        if (poolFundingChain.length > 0) {
-            await saveFundingInfo(context, poolId, poolFundingChain);
-            console.log(`Saved ${poolFundingChain.length} pool funding levels for ${poolAddress}`);
-        }
+    if (tokenFundingChain.length > 0) {
+        await saveFundingInfo(context, poolId, tokenFundingChain);
+        console.log(`Saved ${tokenFundingChain.length} token funding levels for ${poolLiquidityProviderAddress}`);
     }
 }
 
